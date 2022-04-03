@@ -1,4 +1,75 @@
-  private void Move(CCharacter component)
+ public sealed class CSCharacterMovement : OnComponentSystem<CCharacter>
+    {
+        private MSimpleInput _input;
+        private MGame _game;
+        private MCamera _camera;
+
+        private Vector3 _vector;
+        private bool _gameIsActive;
+
+        private float _smooth;
+        
+        protected override async UniTask OnSystemEnable()
+        {
+            _input = await Managers.ResolveAsync<MSimpleInput>();
+            _game = await Managers.ResolveAsync<MGame>();
+            _camera = await Managers.ResolveAsync<MCamera>();
+            
+            _game.CharacterIsMove
+                .Subscribe(value =>
+                {
+                    _gameIsActive = value;
+
+                    if (!_gameIsActive)
+                    {
+                        _vector = Vector3.zero;
+                        
+                        AffectedComponents.ForEach(c => c.CharacterController.Move(_vector));
+                    }
+                })
+                .AddTo(LifetimeDisposables);
+
+            _game.WinConditionReached
+                .Subscribe(_ =>
+                {
+                    _game.CharacterIsMove.SetValueAndForceNotify(false);
+                })
+                .AddTo(LifetimeDisposables);
+            
+            _input.OnJoystickStart
+                .Where(_ => _gameIsActive)
+                .Subscribe(vector => _vector = Vector3.zero)
+                .AddTo(LifetimeDisposables);
+            
+            _input.OnJoystickHold
+                .Where(_ => _gameIsActive)
+                .Subscribe(vector => _vector = vector)
+                .AddTo(LifetimeDisposables);
+            
+            _input.OnJoystickEnd
+                .Where(_ => _gameIsActive)
+                .Subscribe(vector => _vector = Vector3.zero)
+                .AddTo(LifetimeDisposables);
+        }
+
+        protected override void OnSystemDisable() { }
+
+        protected override void OnComponentRegistered(CCharacter component)
+        {
+            Observable
+                .EveryUpdate()
+                .Where(_ => _gameIsActive)
+                .Subscribe(_ =>
+                {
+                    Move(component);
+                })
+                .AddTo(component.LifetimeDisposables);
+        }
+
+        protected override void OnComponentUnregistered(CCharacter component) { }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void Move(CCharacter component)
         {
             Vector3 move = Vector3.zero;
 
@@ -22,3 +93,4 @@
 
             component.CharacterController.Move(move * component.Speed * Time.deltaTime);
         }
+    }
